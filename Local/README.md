@@ -4,7 +4,7 @@ This checkout builds the Crest at `/Applications/Crest.app`. It is the maintaine
 
 ## Branches and remotes
 - `upstream` points to github.com/pauljoda/Crest. It is fetch-only in practice. Never push to it.
-- `origin` is Josue's fork, if one exists. Push `josue` there as a backup.
+- `origin` is github.com/JosueM1109/Crest (public fork). `Local/update.sh` force-pushes `josue` there with `--force-with-lease` after each rebase. Push by hand after your own commits.
 - `josue` is Josue's working branch: an upstream release tag plus Josue's commits.
 
 ## Everyday commands

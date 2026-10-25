@@ -77,6 +77,14 @@ main() {
     fi
   fi
 
+  # Back up the rebased branch to Josue's fork. The rebase rewrote josue, so a
+  # plain push is refused; --force-with-lease still refuses if the fork has
+  # commits this checkout hasn't seen.
+  if git remote get-url origin >/dev/null 2>&1; then
+    git push --quiet --force-with-lease origin josue \
+      || print -u2 "Couldn't back up josue to origin. Push it by hand later."
+  fi
+
   exec "$repo/Local/build-and-install.sh"
 }
 
