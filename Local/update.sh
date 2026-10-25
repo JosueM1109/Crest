@@ -12,10 +12,13 @@
 
 set -euo pipefail
 
+# Captured at top level: inside a zsh function, $0 is the function name.
+script_path="${0:A}"
+
 # The whole script is one function, so zsh has parsed all of it before the
 # rebase rewrites the working tree (this file included).
 main() {
-  local repo="${0:A:h:h}"
+  local repo="${script_path:h:h}"
   cd "$repo"
 
   if [[ "${1:-}" == "--rebuild" ]]; then

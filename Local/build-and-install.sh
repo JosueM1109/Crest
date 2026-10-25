@@ -19,11 +19,15 @@
 #   CREST_LOCAL_TEAM_ID   signing team (default LGV78N28G9)
 #   CREST_DOTNET          .NET SDK (default ~/.dotnet/dotnet, from Scripts/control-plane/install-dotnet.sh)
 #   CREST_LOCAL_NO_LAUNCH set to 1 to install without opening Crest
+#   CREST_LOCAL_DRY_RUN   set to 1 to build, package and verify without installing
 
 set -euo pipefail
 
+# Captured at top level: inside a zsh function, $0 is the function name.
+script_path="${0:A}"
+
 main() {
-  local repo="${0:A:h:h}"
+  local repo="${script_path:h:h}"
   cd "$repo"
 
   local team_id="${CREST_LOCAL_TEAM_ID:-LGV78N28G9}"
@@ -57,7 +61,7 @@ main() {
     fi
   done
   if [[ -z "$identity" ]]; then
-    print -u2 "No valid Apple Development certificate for team $team_id. Sign in to Xcode > Settings > Accounts."
+    print -u2 "No valid Apple Development certificate for team $team_id. In Xcode: Settings > Accounts > (team) > Manage Certificates > + > Apple Development."
     exit 1
   fi
 
@@ -147,6 +151,10 @@ main() {
   codesign --force --timestamp --preserve-metadata=entitlements,flags,runtime --sign "$identity" "$product"
   codesign --verify --deep --strict "$product"
   [[ "$(defaults read "${product}/Contents/Info" CFBundleIdentifier)" == "com.pauldavis.crest" ]]
+  if [[ "${CREST_LOCAL_DRY_RUN:-0}" == 1 ]]; then
+    print "Dry run: packaged and verified $commit with $engine_label. Nothing was installed."
+    return 0
+  fi
 
   # --- Install, keeping the previous app for rollback. ---
   local running="^${app_path}/Contents/MacOS/"
