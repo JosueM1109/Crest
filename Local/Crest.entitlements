@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements for Josue's local build. These are the entitlements from
+  CrestMac/Configuration/Crest.entitlements that work without a provisioning
+  profile. iCloud, push, keychain-access-groups and the browser passkey
+  entitlement are tied to the maintainer's Apple team, so they are left out.
+  As a result, Crest's iCloud sync and Crest Passwords are unavailable in this
+  build, and Bitwarden handles passwords and passkeys instead.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.personal-information.location</key>
+	<true/>
+	<key>com.apple.security.device.camera</key>
+	<true/>
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>
