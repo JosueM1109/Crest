@@ -192,6 +192,11 @@ final class SpacePickerPresentationView: NSView {
     }
 
     private func animateHighlight(_ transition: SpacePagerSettlement) -> Bool {
+        // A style without a selection shape has no highlight to move.
+        guard style.marksSelection else {
+            highlight.isHidden = true
+            return true
+        }
         let frames = transition.positions.compactMap { interpolatedFrame(at: $0) }
         let colors = transition.positions.compactMap { interpolatedColor(at: $0) }
         guard frames.count == transition.positions.count, colors.count == frames.count else { return false }
@@ -231,7 +236,9 @@ final class SpacePickerPresentationView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        guard let frame = interpolatedFrame(at: position), let color = interpolatedColor(at: position) else {
+        guard style.marksSelection, let frame = interpolatedFrame(at: position),
+            let color = interpolatedColor(at: position)
+        else {
             highlight.isHidden = true
             return
         }

@@ -21,6 +21,7 @@ struct CrestSpaceIconPicker<Space: BrowserSpaceIdentifying, SegmentContent: View
 
     @State private var reorder = CrestSpacePickerReordering()
     @State private var frames: [UUID: CGRect] = [:]
+    @State private var hoveredSpaceID: UUID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Actions - Drawing
@@ -141,13 +142,16 @@ struct CrestSpaceIconPicker<Space: BrowserSpaceIdentifying, SegmentContent: View
             selectSpace(space.id)
         } label: {
             segmentContent(space)
+                .opacity(style.contentOpacity(isSelected: isSelected, isHovered: hoveredSpaceID == space.id))
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isSelected)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: hoveredSpaceID == space.id)
                 .frame(
                     width: segmentSize.width,
                     height: segmentSize.height
                 )
                 .contentShape(.rect)
                 .background {
-                    if isSelected && selectionPresentation == nil {
+                    if isSelected && selectionPresentation == nil && style.marksSelection {
                         CrestSpaceIconPickerShape(style: style)
                             .fill((style.tintsSelection ? tint : Color.primary).opacity(style.selectionFillOpacity))
                             .overlay {
@@ -158,6 +162,13 @@ struct CrestSpaceIconPicker<Space: BrowserSpaceIdentifying, SegmentContent: View
                 }
         }
         .buttonStyle(.plain)
+        .onHover { isHovered in
+            if isHovered {
+                hoveredSpaceID = space.id
+            } else if hoveredSpaceID == space.id {
+                hoveredSpaceID = nil
+            }
+        }
         .accessibilityLabel(Text(verbatim: identity.name))
         .accessibilityValue(Text(accessibilityValue))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
