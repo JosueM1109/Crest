@@ -25,6 +25,10 @@ final class SpacePagerPresentation {
         let phase: Phase
         let destinationID: UUID?
         var transition: SpacePagerSettlement? = nil
+        /// Spaces whose pages are shown off screen ahead of a likely swipe, so
+        /// the slide that follows does not reveal a page the engine has not
+        /// drawn yet.
+        var warmedSpaceIDs: [UUID] = []
     }
 
     private(set) var snapshot: Snapshot?

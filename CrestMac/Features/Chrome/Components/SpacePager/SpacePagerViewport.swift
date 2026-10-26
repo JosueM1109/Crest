@@ -38,6 +38,9 @@ final class SpacePagerViewport<Content: View>: NSView {
     private(set) var motion: Motion?
     private var generation: UInt = 0
     private var expectedSelection: UUID?
+    /// The neighbors whose pages are shown off screen while fingers rest on
+    /// the trackpad over the pager, until that touch ends or its slide does.
+    private var warmedSpaceIDs: [UUID] = []
     private var hosts: [BrowserSpaceRuntimeAssignment: SpacePageHost<Content>] = [:]
     private var makeRoot: ((SpaceModel, Bool) -> SpacePageRoot<Content>)?
     private var selectSpace: (UUID) -> UUID = { $0 }
@@ -238,6 +241,23 @@ final class SpacePagerViewport<Content: View>: NSView {
         return assignment(for: id)
     }
 
+    /// Fingers resting on the trackpad over the pager often begin a swipe.
+    /// Showing both neighbors' pages off screen now gives the engine time to
+    /// draw them before the slide reveals one. A slide keeps them until it
+    /// finishes; a touch that ends without one hides them again.
+    func warmNeighbors(_ warms: Bool) {
+        if warms, motion != nil { return }
+        var ids: [UUID] = []
+        if warms, !isInteractionLocked, bounds.width > 0 {
+            for direction: CGFloat in [-1, 1] {
+                if let id = neighbor(forPhysicalDirection: direction)?.spaceID, !ids.contains(id) { ids.append(id) }
+            }
+        }
+        guard ids != warmedSpaceIDs else { return }
+        warmedSpaceIDs = ids
+        publishPresentation()
+    }
+
     func beginInteractiveMotion() -> UInt? {
         guard !isInteractionLocked, bounds.width > 0, spaces.count > 1 else { return nil }
         stopPresentationSampling()
@@ -280,7 +300,8 @@ final class SpacePagerViewport<Content: View>: NSView {
         guard var current = motion, current.generation == token, current.settledDestination == nil,
             !isInteractionLocked, !isHiddenOrHasHiddenAncestor, window != nil
         else { return false }
-        if current.direction == 0, deltaX != 0 {
+        let choosesTarget = current.direction == 0 && deltaX != 0
+        if choosesTarget {
             current.direction = deltaX < 0 ? -1 : 1
             current.target = neighbor(forPhysicalDirection: current.direction)
             if let target = current.target, hosts[target] == nil {
@@ -304,6 +325,9 @@ final class SpacePagerViewport<Content: View>: NSView {
         let travel = min(max(0, availableTravel), max(0, (current.translation + deltaX) * current.direction))
         current.translation = travel * current.direction
         motion = current
+        // Show the destination's page now, a frame before the strip first
+        // moves it into view, rather than in the frame that does.
+        if choosesTarget { publishPresentation() }
         startPresentationSampling()
         return true
     }
@@ -378,6 +402,7 @@ final class SpacePagerViewport<Content: View>: NSView {
         stopPresentationSampling()
         generation &+= 1
         motion = nil
+        warmedSpaceIDs = []
         stopHostAnimations()
         positionHosts()
         updateAccessibility()
@@ -640,6 +665,7 @@ final class SpacePagerViewport<Content: View>: NSView {
         stopPresentationSampling()
         let committedSelection = expectedSelection ?? selectedSpaceID
         motion = nil
+        warmedSpaceIDs = []
         presentationSpaceID = destination
         if current.commitsSelection, destination != committedSelection { expectedSelection = destination }
         stopHostAnimations()
@@ -688,7 +714,7 @@ final class SpacePagerViewport<Content: View>: NSView {
                 generation: generation, spaceIDs: spaces.map(\.id), position: position,
                 phase: motion == nil ? .idle : motion?.settledDestination == nil ? .tracking : .settling,
                 destinationID: motion?.settledDestination ?? motion?.target?.spaceID ?? originID,
-                transition: motion?.transition))
+                transition: motion?.transition, warmedSpaceIDs: warmedSpaceIDs))
     }
 
     private func startPresentationSampling() {

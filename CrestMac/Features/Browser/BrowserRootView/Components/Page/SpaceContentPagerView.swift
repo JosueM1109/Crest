@@ -224,6 +224,9 @@ final class SpaceContentPagerView<Content: View & Equatable>: NSView {
         }
         let neighbors = preparesNeighbors ? [target - 1, target + 1, center - 1, center + 1] : []
         var indices = visible.filter { spaces.indices.contains($0) }
+        // Warmed neighbors need hosts even across the ends of the Spaces.
+        let warmed = (snapshot?.warmedSpaceIDs ?? []).compactMap { id in spaces.firstIndex { $0.id == id } }
+        for index in warmed where indices.count < 4 { indices.insert(index) }
         for index in neighbors where indices.count < 4 && spaces.indices.contains(index) { indices.insert(index) }
         let cached = spaces.indices.filter { hosts[BrowserSpaceRuntimeAssignment(space: spaces[$0])] != nil }
             .sorted { abs($0 - target) < abs($1 - target) }
@@ -280,8 +283,11 @@ final class SpaceContentPagerView<Content: View & Equatable>: NSView {
     private func contentPresentation(at index: Int) -> SpaceContentPresentation {
         guard let snapshot else { return .inactive }
         let id = spaces[index].id
+        // A page warmed ahead of a likely swipe is drawn off screen, so the
+        // slide that follows never reveals it blank.
+        let warmed = snapshot.warmedSpaceIDs.contains(id)
         if snapshot.phase == .idle {
-            guard id == snapshot.destinationID else { return .inactive }
+            guard id == snapshot.destinationID else { return warmed ? .preview : .inactive }
             return id == selectedSpaceID ? .interactive : .preview
         }
         // Keep the complete release path alive even as position samples advance
@@ -291,7 +297,8 @@ final class SpaceContentPagerView<Content: View & Equatable>: NSView {
         let visible = Int(min(start, end).rounded(.down))...Int(max(start, end).rounded(.up))
         // A Space selected mid-slide is admitted with that selection, so the
         // slide carrying on to it doesn't wait on its first layout.
-        return visible.contains(index) || id == snapshot.destinationID || id == selectedSpaceID ? .preview : .inactive
+        return visible.contains(index) || id == snapshot.destinationID || id == selectedSpaceID || warmed
+            ? .preview : .inactive
     }
 
     /// Where `key`'s page sits while the strip shows `position`, placed
