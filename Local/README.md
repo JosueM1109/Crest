@@ -26,5 +26,10 @@ A build compiles only the Swift UI and C# core, which takes minutes. The Chromiu
 ## Changing the engine, or if the maintainer stops publishing
 Swift, C#, and packaging changes reuse the published engine. Changes to Chromium patches, `Overlay/`, `source.lock.json`, or the control-plane scripts give a new engine key that has no published engine. In that case, build Chromium yourself by following `CrestEngines/Chromium/README.md`. The build needs `ninja`, `go`, 50+ GB free and several hours, and its performance preset needs the macOS 26.5 SDK. Then rerun with `CREST_CHROMIUM_APP=/path/to/Chromium.app Local/update.sh --rebuild`.
 
+## Your own fixes on `josue`
+Commit fixes to `josue` without running `Scripts/set-version.sh` and without adding `Documentation/ReleaseNotes.json` entries. The maintainer changes those two files in nearly every commit, so editing them here would cause a conflict on every update. Add them only on a branch you open as a PR.
+
+Two `SpaceScrollGestureTests` cases (`testNativePagingTracksPointsAndSettlesBeforeCommitting`, `testNativePagingPreservesInterruptedPositionAndRejectsInvalidatedGestures`) already fail on unmodified v0.8.50 on this Mac, so a failure in them is not caused by your changes.
+
 ## Sending fixes upstream
 Make a branch from `upstream/main` that does not include `Local/`, follow `AGENTS.md` and the `crest-contribution` skill, and open the PR from the fork. Once it merges, git usually drops your copy from `josue` on the next update (if the maintainer edited it, you get a conflict to resolve instead).
