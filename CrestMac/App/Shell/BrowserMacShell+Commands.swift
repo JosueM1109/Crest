@@ -68,9 +68,11 @@ extension BrowserMacShell {
             return true
         }
         // What no Crest command claims can belong to the engine, such as an
-        // extension's binding in the active page's Space, which goes ahead of
-        // the page as it does in Chrome.
-        guard let page = context?.pages.activePage else { return false }
+        // extension's binding in the Space of the page in front, which goes
+        // ahead of the page as it does in Chrome. The page in front is a key
+        // Quick Window's own, or the Peek open over the active tab, so a
+        // password manager's shortcut fills the page the person sees.
+        guard let page = pageActions?.commandPage else { return false }
         return engineHost.handleUnclaimedShortcut(event, page: page)
     }
 

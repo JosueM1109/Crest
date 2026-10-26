@@ -161,6 +161,14 @@
         /// shows; one that may not take focus hands it back to what held it.
         private func show(in window: NSWindow, takingFocus takesFocus: Bool) {
             guard let pages else { return }
+            // The page taking focus becomes its window's active tab in the
+            // engine too, the tab extensions read as current. Attaching does
+            // this already; a page focused while it stays on screen, such as
+            // a Split View pane or the tab under a Peek that closed, would
+            // otherwise leave whichever page attached last active.
+            if takesFocus, let windowID = window.identifier.flatMap({ UUID(uuidString: $0.rawValue) }) {
+                _ = pages.request(MovePageToWindow(pageID: pageID, windowID: windowID))
+            }
             let responder = window.firstResponder
             let shown = pages.request(ShowPage(pageID: pageID))
             isShown = shown
