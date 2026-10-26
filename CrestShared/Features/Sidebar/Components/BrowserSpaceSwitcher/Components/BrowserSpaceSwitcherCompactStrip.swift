@@ -41,7 +41,8 @@ struct BrowserSpaceSwitcherCompactStrip: View {
                     trailingUtilityWidth: utilityWidth(at: .trailing)
                 )
             )
-            let style = CrestSpaceIconPickerStyle.compact.scaled(by: scale)
+            // The icons sit on the sidebar, as in Arc, with the compact sizes.
+            let style = CrestSpaceIconPickerStyle.minimal.scaled(by: scale)
             let allocation = BrowserSpaceSwitcherLayout.compactStripAllocation(
                 availableWidth: geometry.size.width,
                 spaceCount: spaces.count,

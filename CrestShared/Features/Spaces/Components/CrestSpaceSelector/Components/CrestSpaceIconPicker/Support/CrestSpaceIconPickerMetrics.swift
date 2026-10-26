@@ -19,6 +19,10 @@ enum CrestSpaceIconPickerMetrics {
     /// the same hue.
     static let strokeLift: CGFloat = 0.3
     static let groupSelectionInset: CGFloat = trackPadding
+    /// How bright a Space the minimal picker isn't showing draws, and one the
+    /// pointer is over.
+    static let minimalUnselectedOpacity = 0.4
+    static let minimalHoveredOpacity = 0.75
     static let overflowButtonWidth: CGFloat = 28
 }
 
@@ -36,6 +40,18 @@ struct CrestSpaceIconPickerStyle: Hashable, Sendable {
         trackFillOpacity: CrestSpaceIconPickerMetrics.trackFillOpacity,
         trackBorderOpacity: CrestSpaceIconPickerMetrics.trackBorderOpacity, tintsSelection: true,
         selectionFillOpacity: CrestSpaceIconPickerMetrics.selectionFillOpacity)
+    /// The compact picker's measurements with no track, border or selection
+    /// shape: the icons sit on the sidebar, and the Spaces not shown are dimmed.
+    static let minimal = CrestSpaceIconPickerStyle(
+        name: "minimal",
+        height: CrestSpaceIconPickerMetrics.segmentHeight + 2 * CrestSpaceIconPickerMetrics.trackPadding,
+        trackPadding: CrestSpaceIconPickerMetrics.trackPadding,
+        fixedCornerRadius: CrestSpaceIconPickerMetrics.cornerRadius,
+        minimumSegmentWidth: CrestSpaceIconPickerMetrics.segmentWidth, smallestSegment: .zero,
+        overflowButtonWidth: CrestSpaceIconPickerMetrics.overflowButtonWidth, fillsSegments: false,
+        trackFillOpacity: 0, trackBorderOpacity: 0, tintsSelection: false, selectionFillOpacity: 0,
+        marksSelection: false, unselectedContentOpacity: CrestSpaceIconPickerMetrics.minimalUnselectedOpacity,
+        hoveredContentOpacity: CrestSpaceIconPickerMetrics.minimalHoveredOpacity)
     static let touch = CrestSpaceIconPickerStyle(
         name: "touch", height: 48, trackPadding: CrestSpaceIconPickerMetrics.trackPadding, fixedCornerRadius: nil,
         minimumSegmentWidth: 52, smallestSegment: CGSize(width: 44, height: 42), overflowButtonWidth: 44,
@@ -75,6 +91,15 @@ struct CrestSpaceIconPickerStyle: Hashable, Sendable {
 
     let selectionFillOpacity: Double
 
+    /// Whether a shape marks the selected Space. Without one, the selection
+    /// shows only as the other Spaces' dimmer icons.
+    let marksSelection: Bool
+
+    /// How bright the icons of Spaces other than the selected one draw, and
+    /// one of them under the pointer.
+    let unselectedContentOpacity: Double
+    let hoveredContentOpacity: Double
+
     /// The height of one segment inside the track.
     var segmentHeight: CGFloat {
         height - 2 * trackPadding
@@ -85,7 +110,8 @@ struct CrestSpaceIconPickerStyle: Hashable, Sendable {
     private init(
         name: String, height: CGFloat, trackPadding: CGFloat, fixedCornerRadius: CGFloat?,
         minimumSegmentWidth: CGFloat, smallestSegment: CGSize, overflowButtonWidth: CGFloat, fillsSegments: Bool,
-        trackFillOpacity: Double, trackBorderOpacity: Double, tintsSelection: Bool, selectionFillOpacity: Double
+        trackFillOpacity: Double, trackBorderOpacity: Double, tintsSelection: Bool, selectionFillOpacity: Double,
+        marksSelection: Bool = true, unselectedContentOpacity: Double = 1, hoveredContentOpacity: Double = 1
     ) {
         self.name = name
         self.height = height
@@ -99,6 +125,17 @@ struct CrestSpaceIconPickerStyle: Hashable, Sendable {
         self.trackBorderOpacity = trackBorderOpacity
         self.tintsSelection = tintsSelection
         self.selectionFillOpacity = selectionFillOpacity
+        self.marksSelection = marksSelection
+        self.unselectedContentOpacity = unselectedContentOpacity
+        self.hoveredContentOpacity = hoveredContentOpacity
+    }
+
+    // MARK: - Actions - Selection
+
+    /// How bright a Space's icon draws while it is selected, or under the
+    /// pointer, or neither.
+    func contentOpacity(isSelected: Bool, isHovered: Bool) -> Double {
+        isSelected ? 1 : isHovered ? hoveredContentOpacity : unselectedContentOpacity
     }
 
     // MARK: - Actions - Drawing
