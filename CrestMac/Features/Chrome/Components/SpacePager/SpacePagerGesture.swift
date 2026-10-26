@@ -34,6 +34,7 @@ final class SpacePagerGesture<Content: View> {
     }
 
     func cancelCurrentGesture() {
+        viewport?.warmNeighbors(false)
         axis = .outside
         nativeToken = nil
         claimedGesture = false
@@ -76,23 +77,33 @@ final class SpacePagerGesture<Content: View> {
                 event, isInside: inside, layoutDirection: viewport.layoutDirection,
                 onStep: viewport.step)
         }
-        if event.phase.contains(.mayBegin) { return event }
+        if event.phase.contains(.mayBegin) {
+            // Fingers now rest on the trackpad: a swipe may follow.
+            viewport.warmNeighbors(inside)
+            return event
+        }
         if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+            viewport.warmNeighbors(false)
             nativeToken = nil
             axis = .outside
             return claimedGesture ? nil : event
         }
         guard event.phase.contains(.began) || event.phase.contains(.changed),
             axis != .outside, axis != .vertical
-        else { return event }
+        else {
+            if axis != .horizontal { viewport.warmNeighbors(false) }
+            return event
+        }
         if axis == .undecided {
             guard event.scrollingDeltaX != 0 || event.scrollingDeltaY != 0 else { return event }
             guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else {
                 axis = .vertical
+                viewport.warmNeighbors(false)
                 return event
             }
             guard inside, let token = viewport.beginInteractiveMotion() else {
                 axis = .outside
+                viewport.warmNeighbors(false)
                 return event
             }
             nativeToken = token
