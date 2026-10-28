@@ -2,21 +2,35 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
-/// A passive strip of real content surfaces. Only the sidebar owns gestures;
-/// web history gestures continue to belong to WebKit.
+/// A passive set of real content surfaces, one per Space. Only the sidebar
+/// owns gestures; web history gestures continue to belong to WebKit. The page
+/// area does not slide with the sidebar: it switches to a Space's page in
+/// place as soon as the switch is decided, as a tab switch does, and keeps the
+/// page it showed above the new one until that one has drawn.
 @MainActor
 final class SpaceContentPagerView<Content: View & Equatable>: NSView {
+    /// How many display frames the page shown before a switch stays above the
+    /// page replacing it, as `BrowserWebHostView` holds a replaced tab: longer
+    /// than the frames a page shown again takes to draw.
+    private static var holdFrames: Int { 5 }
+
     private var spaces: [SpaceModel] = []
     private var selectedSpaceID: UUID?
     private var lockedSpaceIDs: Set<UUID> = []
     private var layoutDirection = LayoutDirection.leftToRight
     private var presentation: SpacePagerPresentation?
     private var snapshot: SpacePagerPresentation.Snapshot?
-    private var transition: SpacePagerSettlement?
+    /// The Space whose page the area shows.
+    private var shownSpaceID: UUID?
+    /// The Space shown before `shownSpaceID`, kept above it while its page
+    /// draws its first frames.
+    private var heldSpaceID: UUID?
+    private var heldFramesLeft = 0
+    private var heldDisplayLink: CADisplayLink?
+    private lazy var holdObserver = SpaceContentHoldObserver { [weak self] in self?.heldFrameElapsed() }
     private var hosts: [BrowserSpaceRuntimeAssignment: SpacePageHost<Content>] = [:]
     private var makeRoot: ((SpaceModel, Bool) -> SpacePageRoot<Content>)?
     private var lastSize = CGSize.zero
-    private var preparedDestination: UUID?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -55,43 +69,27 @@ final class SpaceContentPagerView<Content: View & Equatable>: NSView {
         }
         let current = matchingSnapshot ?? restingSnapshot(selectedSpaceID)
         snapshot = current
-        prepareHosts(
-            at: current.position, destination: current.destinationID, refresh: current.phase == .idle,
-            preparesNeighbors: current.phase == .idle)
-        if transition == nil { positionHosts(at: current.position) }
+        show(shownID(in: current), refresh: current.phase == .idle)
         updateAccessibility()
     }
 
     func disconnect() {
         presentation?.removeObserver(owner: self)
         presentation = nil
-        transition = nil
-        for host in hosts.values { host.layer?.removeAllAnimations() }
+        endHold()
     }
 
     override func layout() {
         super.layout()
         guard lastSize != bounds.size else { return }
         lastSize = bounds.size
-        // A sidebar animation resizes this viewport on every frame. A slide
-        // already running keeps going: its pages are re-aimed at the new size
-        // from the moment it began, rather than restarting it every frame.
-        let moving = transition == nil ? [] : slidingHosts
-        let began = transition == nil ? nil : slideBeginTime
         for host in hosts.values {
-            host.layer?.removeAllAnimations()
             // Keep offscreen pages cached without reflowing their native content.
             if host.hostingView.rootView.contentPresentation != .inactive, host.frame.size != bounds.size {
                 host.setFrameSize(bounds.size)
             }
         }
-        if let snapshot {
-            prepareHosts(
-                at: snapshot.position, destination: snapshot.destinationID, refresh: false,
-                preparesNeighbors: snapshot.phase == .idle)
-            positionHosts(at: snapshot.position)
-        }
-        if let transition { resumeSlide(moving, along: transition, beganAt: began) }
+        refreshShownHosts()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -114,101 +112,75 @@ final class SpaceContentPagerView<Content: View & Equatable>: NSView {
 
     private func receive(_ value: SpacePagerPresentation.Snapshot) {
         guard value.spaceIDs == spaces.map(\.id) else { return }
-        // A selection that arrives mid-slide leaves the roots built for the
+        // A selection that arrives mid-switch leaves the roots built for the
         // Space selected before it, so the page it lands on would never take
-        // input. A settled slide supplies the latest roots, as the sidebar's
+        // input. A settled switch supplies the latest roots, as the sidebar's
         // pager does.
         let settles = value.phase == .idle && snapshot?.phase != .idle
         snapshot = value
-        if let release = value.transition, value.phase == .settling, bounds.width > 0 {
-            if transition == release {
-                // Admit the next neighbor once the common native animation has
-                // started. Existing visible roots are never refreshed here.
-                if preparedDestination != value.destinationID {
-                    preparedDestination = value.destinationID
-                    prepareHosts(at: value.position, destination: value.destinationID, refresh: false)
-                    updateAccessibility()
-                }
-                return
-            }
-            prepareHosts(
-                at: release.startPosition, destination: value.destinationID, refresh: false,
-                preparesNeighbors: false)
-            stopAnimations()
-            positionHosts(at: release.startPosition)
-            transition = release
-            let moving = hosts.filter { key, host in
-                needsMotion(host, to: origin(for: key, at: release.endPosition, placedNear: release.startPosition))
-            }
-            slide(Array(moving.keys), along: release)
-        } else {
-            stopAnimations()
-            prepareHosts(
-                at: value.position, destination: value.destinationID, refresh: settles,
-                preparesNeighbors: value.phase == .idle)
-            positionHosts(at: value.position)
-        }
+        show(shownID(in: value), refresh: settles)
         updateAccessibility()
     }
 
-    /// Moves the pages `keys` name along `release`, with the pager's native
-    /// curve.
-    private func slide(_ keys: [BrowserSpaceRuntimeAssignment], along release: SpacePagerSettlement) {
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = release.duration
-            context.timingFunction = release.timingFunction
-            for key in keys {
-                guard let host = hosts[key] else { continue }
-                let animation = CABasicAnimation()
-                release.configure(animation)
-                animation.fromValue = NSValue(point: origin(for: key, at: release.startPosition))
-                host.animations = ["frameOrigin": animation]
-                host.animator().setFrameOrigin(
-                    origin(for: key, at: release.endPosition, placedNear: release.startPosition))
-            }
+    // MARK: - Actions - Switching
+
+    /// The Space whose page the area shows for `snapshot`: the one a switch
+    /// goes to as soon as it is decided, and while fingers still move the
+    /// sidebar, the one shown already.
+    private func shownID(in snapshot: SpacePagerPresentation.Snapshot) -> UUID? {
+        snapshot.phase == .tracking ? shownSpaceID ?? selectedSpaceID : snapshot.destinationID
+    }
+
+    /// Shows `id`'s page in place. A page not drawn yet waits beneath the page
+    /// it replaces for a few frames, as a tab switch does, so the switch never
+    /// shows a blank page.
+    private func show(_ id: UUID?, refresh: Bool) {
+        guard let id, spaces.contains(where: { $0.id == id }) else { return }
+        if let previous = shownSpaceID, previous != id, let previousKey = assignment(for: previous),
+            hosts[previousKey] != nil
+        {
+            let drawn =
+                assignment(for: id).flatMap { hosts[$0] }
+                .map { $0.hostingView.rootView.contentPresentation != .inactive } ?? false
+            if drawn { endHold() } else { beginHold(previous) }
         }
+        shownSpaceID = id
+        refreshShownHosts(refresh: refresh)
     }
 
-    /// Continues the slide along `release` for the pages `keys` name after a
-    /// resize, from the moment it began, so it goes on from where it is
-    /// instead of starting over. AppKit installs no animator animation while
-    /// it lays a view out, so the pages' layers take the slide directly.
-    private func resumeSlide(
-        _ keys: [BrowserSpaceRuntimeAssignment], along release: SpacePagerSettlement, beganAt beginTime: CFTimeInterval?
-    ) {
-        for key in keys {
-            guard let host = hosts[key] else { continue }
-            let animation = CABasicAnimation(keyPath: "position")
-            release.configure(animation)
-            // Zero, for a slide Core Animation has not committed yet, starts now.
-            animation.beginTime = beginTime ?? 0
-            let end = origin(for: key, at: release.endPosition, placedNear: release.startPosition)
-            animation.fromValue = NSValue(point: origin(for: key, at: release.startPosition))
-            animation.toValue = NSValue(point: end)
-            host.setFrameOrigin(end)
-            host.layer?.add(animation, forKey: "position")
-        }
+    /// Prepares and places the hosts around the Space shown now.
+    private func refreshShownHosts(refresh: Bool = false) {
+        guard let id = shownSpaceID, let index = spaces.firstIndex(where: { $0.id == id }) else { return }
+        let position = CGFloat(index)
+        prepareHosts(at: position, destination: id, refresh: refresh, preparesNeighbors: snapshot?.phase == .idle)
+        positionHosts(at: position)
     }
 
-    /// The pages the running slide moves.
-    private var slidingHosts: [BrowserSpaceRuntimeAssignment] {
-        hosts.filter { $0.value.layer?.animationKeys()?.isEmpty == false }.map(\.key)
+    private func assignment(for id: UUID) -> BrowserSpaceRuntimeAssignment? {
+        spaces.first { $0.id == id }.map(BrowserSpaceRuntimeAssignment.init(space:))
     }
 
-    /// When Core Animation began the running slide, once it has committed it.
-    private var slideBeginTime: CFTimeInterval? {
-        hosts.values.lazy.compactMap { host -> CFTimeInterval? in
-            guard let layer = host.layer, let key = layer.animationKeys()?.first else { return nil }
-            return layer.animation(forKey: key)?.beginTime
-        }.first { $0 > 0 }
+    private func beginHold(_ id: UUID) {
+        heldDisplayLink?.invalidate()
+        heldSpaceID = id
+        heldFramesLeft = Self.holdFrames
+        let link = displayLink(target: holdObserver, selector: #selector(SpaceContentHoldObserver.frameElapsed(_:)))
+        link.add(to: .main, forMode: .common)
+        heldDisplayLink = link
     }
 
-    private func stopAnimations() {
-        if transition != nil {
-            for host in hosts.values { host.layer?.removeAllAnimations() }
-        }
-        transition = nil
-        preparedDestination = nil
+    private func heldFrameElapsed() {
+        heldFramesLeft -= 1
+        guard heldFramesLeft <= 0 else { return }
+        endHold()
+        refreshShownHosts()
+        updateAccessibility()
+    }
+
+    private func endHold() {
+        heldDisplayLink?.invalidate()
+        heldDisplayLink = nil
+        heldSpaceID = nil
     }
 
     private func prepareHosts(
@@ -221,6 +193,9 @@ final class SpaceContentPagerView<Content: View & Equatable>: NSView {
         if snapshot?.phase != .idle, let selected = spaces.firstIndex(where: { $0.id == selectedSpaceID }) {
             // A selection made mid-slide is where the slide goes next.
             visible.insert(selected)
+        }
+        if let heldSpaceID, let held = spaces.firstIndex(where: { $0.id == heldSpaceID }) {
+            visible.insert(held)
         }
         let neighbors = preparesNeighbors ? [target - 1, target + 1, center - 1, center + 1] : []
         var indices = visible.filter { spaces.indices.contains($0) }
@@ -283,22 +258,15 @@ final class SpaceContentPagerView<Content: View & Equatable>: NSView {
     private func contentPresentation(at index: Int) -> SpaceContentPresentation {
         guard let snapshot else { return .inactive }
         let id = spaces[index].id
-        // A page warmed ahead of a likely swipe is drawn off screen, so the
-        // slide that follows never reveals it blank.
-        let warmed = snapshot.warmedSpaceIDs.contains(id)
-        if snapshot.phase == .idle {
-            guard id == snapshot.destinationID else { return warmed ? .preview : .inactive }
-            return id == selectedSpaceID ? .interactive : .preview
+        // The page held above a switch's new page stays drawn until it lets go.
+        if id == heldSpaceID { return .preview }
+        if id == shownSpaceID {
+            return snapshot.phase == .idle && id == selectedSpaceID ? .interactive : .preview
         }
-        // Keep the complete release path alive even as position samples advance
-        // or a reversal carries the strip through an intermediate Space.
-        let start = snapshot.transition?.startPosition ?? snapshot.position
-        let end = snapshot.transition?.endPosition ?? snapshot.position
-        let visible = Int(min(start, end).rounded(.down))...Int(max(start, end).rounded(.up))
-        // A Space selected mid-slide is admitted with that selection, so the
-        // slide carrying on to it doesn't wait on its first layout.
-        return visible.contains(index) || id == snapshot.destinationID || id == selectedSpaceID || warmed
-            ? .preview : .inactive
+        // A page warmed ahead of a likely swipe, or the one a swipe in progress
+        // heads for, is drawn off screen so the switch shows it at once.
+        let heading = snapshot.phase == .tracking && id == snapshot.destinationID
+        return snapshot.warmedSpaceIDs.contains(id) || heading ? .preview : .inactive
     }
 
     /// Where `key`'s page sits while the strip shows `position`, placed
@@ -313,23 +281,20 @@ final class SpaceContentPagerView<Content: View & Equatable>: NSView {
         return CGPoint(x: (CGFloat(placed) - position) * bounds.width * direction, y: 0)
     }
 
-    private func needsMotion(_ host: NSView, to origin: CGPoint) -> Bool {
-        host.frame.intersects(bounds) || CGRect(origin: origin, size: bounds.size).intersects(bounds)
-    }
-
     private func positionHosts(at position: CGFloat) {
         for (key, host) in hosts {
-            var origin = origin(for: key, at: position)
+            // The held page covers the shown one in place until it has drawn.
+            let held = key.spaceID == heldSpaceID
+            var origin = held ? .zero : origin(for: key, at: position)
             if host.hostingView.rootView.contentPresentation == .inactive {
                 guard host.frame.intersects(bounds) else { continue }
                 // A wider viewport can expose a cached frame. Park it beyond
-                // the clip until prepareHosts admits it to a visible slide.
+                // the clip until prepareHosts shows it.
                 origin.x =
                     origin.x < 0 ? min(origin.x, -host.frame.width) : max(origin.x, bounds.maxX + host.frame.width)
             }
-            if snapshot?.phase == .idle || needsMotion(host, to: origin) {
-                if host.frame.origin != origin { host.setFrameOrigin(origin) }
-            }
+            host.layer?.zPosition = held ? 1 : 0
+            if host.frame.origin != origin { host.setFrameOrigin(origin) }
         }
     }
 
@@ -340,4 +305,14 @@ final class SpaceContentPagerView<Content: View & Equatable>: NSView {
             )
         }
     }
+}
+
+/// Keeps the Objective-C display-link target independent of the generic page root.
+@MainActor
+private final class SpaceContentHoldObserver: NSObject {
+    let elapsed: @MainActor () -> Void
+
+    init(elapsed: @escaping @MainActor () -> Void) { self.elapsed = elapsed }
+
+    @objc func frameElapsed(_ link: CADisplayLink) { elapsed() }
 }
