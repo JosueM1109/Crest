@@ -1084,6 +1084,7 @@ final class BrowserPagePool:
 
     /// Puts `presentedTabIDs` on screen in order with `tabID` focused.
     private func activate(_ tabID: UUID?, presenting presentedTabIDs: [UUID]) {
+        let focusMoves = tabID != activeTabID
         if tabID != activeTabID || presentedTabIDs != self.presentedTabIDs {
             let focused = tabID?.uuidString ?? "none"
             DiagnosticLog.pages.notice(
@@ -1097,6 +1098,12 @@ final class BrowserPagePool:
         }
         activeTabID = tabID
         self.presentedTabIDs = presentedTabIDs
+        // A click in a split card focuses its page without putting a page on
+        // screen, so the engine's active tab, which extensions read as the
+        // page in front, would stay on the card focused before.
+        if focusMoves, let tabID, presentedTabIDs.contains(tabID) {
+            tabRuntimes[tabID]?.page.engineAdapter.pageTookFocus()
+        }
     }
 
     private func requestAutomaticPictureInPicture(forDeparturesBefore arriving: [UUID]) {

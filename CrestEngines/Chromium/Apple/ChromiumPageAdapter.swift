@@ -75,6 +75,8 @@
 
         func setPrivateBrowsing(_ isPrivate: Bool) { native.isPrivateBrowsing = isPrivate }
 
+        func pageTookFocus() { native.activateShownPage() }
+
         // MARK: - Actions - Engine-owned services
 
         /// Chromium's page view takes focus through its own responder chain.

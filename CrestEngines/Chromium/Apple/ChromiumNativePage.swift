@@ -157,6 +157,17 @@
             return responder.isDescendant(of: surface)
         }
 
+        /// Makes the page its window's active tab in the engine without showing
+        /// or focusing it again: the person moved focus to it while it stayed
+        /// on screen, as a click in a Split View card does, and extensions read
+        /// the active tab as the page in front.
+        func activateShownPage() {
+            guard isShown, let pages, let window = surface.window,
+                let windowID = window.identifier.flatMap({ UUID(uuidString: $0.rawValue) })
+            else { return }
+            _ = pages.request(MovePageToWindow(pageID: pageID, windowID: windowID))
+        }
+
         /// Asks the engine to show the page. The engine focuses a page it
         /// shows; one that may not take focus hands it back to what held it.
         private func show(in window: NSWindow, takingFocus takesFocus: Bool) {
