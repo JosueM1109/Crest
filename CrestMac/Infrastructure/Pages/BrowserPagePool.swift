@@ -1102,7 +1102,7 @@ final class BrowserPagePool:
         // screen, so the engine's active tab, which extensions read as the
         // page in front, would stay on the card focused before.
         if focusMoves, let tabID, presentedTabIDs.contains(tabID) {
-            tabRuntimes[tabID]?.page.engineAdapter.pageTookFocus()
+            tabRuntimes[tabID]?.page.engineAdapter.pageTookFocus(inWindow: windowID)
         }
     }
 

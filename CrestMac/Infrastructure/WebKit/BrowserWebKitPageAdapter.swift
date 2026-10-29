@@ -287,7 +287,7 @@ final class BrowserWebKitPageAdapter: BrowserPageEngineAdapter {
     func setPrivateBrowsing(_ isPrivate: Bool) {}
 
     /// WebKit pages have no engine tab strip to follow focus.
-    func pageTookFocus() {}
+    func pageTookFocus(inWindow windowID: UUID) {}
 
     func applyContentBlocking(
         policy: ContentBlockingPolicy,

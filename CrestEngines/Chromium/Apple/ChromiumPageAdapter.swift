@@ -75,7 +75,7 @@
 
         func setPrivateBrowsing(_ isPrivate: Bool) { native.isPrivateBrowsing = isPrivate }
 
-        func pageTookFocus() { native.activateShownPage() }
+        func pageTookFocus(inWindow windowID: UUID) { native.activateShownPage(inWindow: windowID) }
 
         // MARK: - Actions - Engine-owned services
 

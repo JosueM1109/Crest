@@ -50,10 +50,12 @@ protocol BrowserPageEngineAdapter: EngineHostedPage {
     /// engine, so bridges the adapter runs inside the page follow it.
     func sitePermissionDidChange(_ permission: SitePermission, on page: BrowserPage)
     func setPrivateBrowsing(_ isPrivate: Bool)
-    /// The person moved focus to this page while it stayed on screen, as a
-    /// click in a Split View card does. An engine that keeps its own active
-    /// tab, the one extensions read as current, follows it.
-    func pageTookFocus()
+    /// The person moved focus to this page while it stayed on screen in the
+    /// window `windowID` names, as a click in a Split View card does. An
+    /// engine that keeps its own active tab, the one extensions read as
+    /// current, follows it. A page still on screen in another window, as a
+    /// Quick Window's page is while the window adopts it, is left alone.
+    func pageTookFocus(inWindow windowID: UUID)
 }
 
 /// The page's PiP lifecycle follows tab presentation, regardless of which

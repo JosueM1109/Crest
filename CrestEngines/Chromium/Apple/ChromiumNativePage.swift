@@ -157,13 +157,16 @@
             return responder.isDescendant(of: surface)
         }
 
-        /// Makes the page its window's active tab in the engine without showing
-        /// or focusing it again: the person moved focus to it while it stayed
-        /// on screen, as a click in a Split View card does, and extensions read
-        /// the active tab as the page in front.
-        func activateShownPage() {
-            guard isShown, let pages, let window = surface.window,
-                let windowID = window.identifier.flatMap({ UUID(uuidString: $0.rawValue) })
+        /// Makes the page the active tab of the window `windowID` names in the
+        /// engine, without showing or focusing it again: the person moved focus
+        /// to it while it stayed on screen there, as a click in a Split View
+        /// card does, and extensions read the active tab as the page in front.
+        /// A page shown in another window is left where it is: moving it there
+        /// would take a Quick Window's page back as its window adopts it, and
+        /// the Quick Window would close it.
+        func activateShownPage(inWindow windowID: UUID) {
+            guard isShown, let pages,
+                surface.window?.identifier.flatMap({ UUID(uuidString: $0.rawValue) }) == windowID
             else { return }
             _ = pages.request(MovePageToWindow(pageID: pageID, windowID: windowID))
         }
