@@ -10,7 +10,7 @@ This checkout builds the Crest at `/Applications/Crest.app`. It is the maintaine
 ## Everyday commands
 | Do this | Run |
 |---|---|
-| Update to the maintainer's latest stable release | `Local/update.sh` |
+| Update to the maintainer's latest nightly (ships with its engine) | `Local/update.sh` |
 | Update to a specific release | `Local/update.sh v0.8.60` |
 | Use the maintainer's newest code (nightly-grade) | `Local/update.sh upstream/main` |
 | Rebuild after changing code | commit, then `Local/update.sh --rebuild` |

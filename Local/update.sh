@@ -2,7 +2,7 @@
 # Moves the josue branch onto the maintainer's latest stable release (or a ref
 # you name), then rebuilds and installs with Local/build-and-install.sh.
 #
-#   Local/update.sh                 latest stable release (GitHub "Latest")
+#   Local/update.sh                 latest nightly release (ships with its engine)
 #   Local/update.sh v0.8.60         a specific tag
 #   Local/update.sh upstream/main   the maintainer's newest code (less tested)
 #   Local/update.sh --rebuild       rebuild the current checkout without fetching
@@ -36,7 +36,10 @@ main() {
 
   print "Fetching the maintainer's changes..."
   git fetch upstream --tags --prune --quiet
-  local target="${1:-$(gh release view --repo pauljoda/Crest --json tagName --jq .tagName)}"
+  # The newest nightly: it ships with its Chromium engine, and the "stable"
+  # line can lag weeks behind.
+  local target="${1:-$(gh release list --repo pauljoda/Crest --limit 40 --json tagName \
+    --jq '[.[].tagName | select(startswith("nightly-"))][0]')}"
   git rev-parse --verify --quiet "${target}^{commit}" >/dev/null \
     || { print -u2 "Unknown ref: $target"; exit 1; }
 
